@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Leaflet CSV読み込み・編集保存対応</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { font-family: sans-serif; margin: 10px; }
+    #map { height: 400px; margin-top: 10px; }
+    table { border-collapse: collapse; margin-top: 10px; width: 100%; }
+    th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; }
+    .number-marker {
+      color: white;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      text-align: center;
+      line-height: 24px;
+      font-weight: bold;
+      border: 2px solid white;
+      opacity: 1.0; /* 透明防止 */
+    }
+    .save-btn {
+      margin-top: 10px;
+      padding: 6px 12px;
+      background: #2A93EE;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .save-btn:hover { background: #1b6fc4; }
+  </style>
+</head>
+<body>
+  <h3>CSV読込・編集・保存マップ</h3>
+  <input type="file" id="csvfile" accept=".csv" />
+  <button class="save-btn" id="saveCsvBtn">CSV保存</button>
+  <div id="map"></div>
+  <table id="dataTable">
+    <thead>
+      <tr><th>No</th><th>日時</th><th>緯度</th><th>経度</th><th>音声メモ</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script>
+    const map = L.map('map').setView([35.681236, 139.767125], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    let currentData = [];
+
+    function getColorByNo(no) {
+      if (!no) return '#666';
+      const trimmed = no.trim().toUpperCase();
+      const first = trimmed[0];
+      // A〜E で色分け
+      switch (first) {
+        case 'A': return '#E74C3C'; // 赤
+        case 'B': return '#F39C12'; // オレンジ
+        case 'C': return '#27AE60'; // 緑
+        case 'D': return '#2980B9'; // 青
+        case 'E': return '#8E44AD'; // 紫
+        default:
+          // 数字のみなら青固定
+          return /^\d+$/.test(trimmed) ? '#2A93EE' : '#7F8C8D';
+      }
+    }
+
+    function renderMap(data) {
+      map.eachLayer(layer => {
+        if (layer instanceof L.Marker) map.removeLayer(layer);
+      });
+
+      data.forEach(row => {
+        if (isNaN(row.lat) || isNaN(row.lng)) return;
+        const color = getColorByNo(row.no);
+        const numberIcon = L.divIcon({
+          className: 'number-marker',
+          html: `<div style="background-color:${color};width:24px;height:24px;border-radius:50%;line-height:24px;">${row.no}</div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+        L.marker([row.lat, row.lng], { icon: numberIcon })
+          .addTo(map)
+          .bindPopup(
+            `<b>No:</b> ${row.no}<br>
+             <b>日時:</b> ${row.date}<br>
+             <b>緯度:</b> ${row.lat}<br>
+             <b>経度:</b> ${row.lng}<br>
+             <b>音声メモ:</b> ${row.memo}`
+          );
+      });
+    }
+
+    function renderTable(data) {
+      const tbody = document.querySelector('#dataTable tbody');
+      tbody.innerHTML = '';
+      data.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.no}</td>
+          <td>${row.date}</td>
+          <td>${row.lat}</td>
+          <td>${row.lng}</td>
+          <td contenteditable="true" data-index="${i}">${row.memo}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('td[contenteditable]').forEach(td => {
+        td.addEventListener('input', e => {
+          const i = e.target.getAttribute('data-index');
+          currentData[i].memo = e.target.textContent;
+          renderMap(currentData);
+        });
+      });
+    }
+
+    document.getElementById('csvfile').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        encoding: "UTF-8",
+        complete: results => {
+          currentData = results.data.map(row => ({
+            no: (row['No'] || '').trim(),
+            date: (row['日時'] || '').trim(),
+            lat: parseFloat(row['緯度']),
+            lng: parseFloat(row['経度']),
+            memo: (row['音声メモ'] || '').trim()
+          }));
+          renderMap(currentData);
+          renderTable(currentData);
+          if (currentData.length > 0)
+            map.setView([currentData[0].lat, currentData[0].lng], 15);
+        }
+      });
+    });
+
+    document.getElementById('saveCsvBtn').addEventListener('click', () => {
+      if (currentData.length === 0) return;
+      const header = 'No,日時,緯度,経度,音声メモ\n';
+      const csvBody = currentData.map(row =>
+        `"${row.no}","${row.date}",${row.lat},${row.lng},"${row.memo}"`
+      ).join('\n');
+      const blob = new Blob([header + csvBody], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'output.csv';
+      link.click();
+    });
+  </script>
+</body>
+</html>
