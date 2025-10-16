@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>Leaflet ST8 CSV読み込み・編集保存対応</title>
+  <title>Leaflet 複数CSV読み込み・編集保存対応</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { font-family: sans-serif; margin: 10px; }
@@ -18,7 +18,7 @@
       line-height: 24px;
       font-weight: bold;
       border: 2px solid white;
-      opacity: 1.0; /* 透明防止 */
+      opacity: 1.0;
     }
     .save-btn {
       margin-top: 10px;
@@ -33,8 +33,8 @@
   </style>
 </head>
 <body>
-  <h3>ST8 CSV読込・編集・保存マップ</h3>
-  <input type="file" id="csvfile" accept=".csv" />
+  <h3>ST8 txt_edit</h3>
+  <input type="file" id="csvfile" accept=".csv" multiple />
   <button class="save-btn" id="saveCsvBtn">CSV保存</button>
   <div id="map"></div>
   <table id="dataTable">
@@ -58,7 +58,6 @@
       if (!no) return '#666';
       const trimmed = no.trim().toUpperCase();
       const first = trimmed[0];
-      // A〜E で色分け
       switch (first) {
         case 'A': return '#E74C3C'; // 赤
         case 'B': return '#F39C12'; // オレンジ
@@ -66,7 +65,6 @@
         case 'D': return '#2980B9'; // 青
         case 'E': return '#8E44AD'; // 紫
         default:
-          // 数字のみなら青固定
           return /^\d+$/.test(trimmed) ? '#2A93EE' : '#7F8C8D';
       }
     }
@@ -122,25 +120,37 @@
     }
 
     document.getElementById('csvfile').addEventListener('change', e => {
-      const file = e.target.files[0];
-      if (!file) return;
-      Papa.parse(file, {
-        header: true,
-        skipEmptyLines: true,
-        encoding: "UTF-8",
-        complete: results => {
-          currentData = results.data.map(row => ({
-            no: (row['No'] || '').trim(),
-            date: (row['日時'] || '').trim(),
-            lat: parseFloat(row['緯度']),
-            lng: parseFloat(row['経度']),
-            memo: (row['音声メモ'] || '').trim()
-          }));
-          renderMap(currentData);
-          renderTable(currentData);
-          if (currentData.length > 0)
-            map.setView([currentData[0].lat, currentData[0].lng], 15);
-        }
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+
+      let allResults = [];
+      let processed = 0;
+
+      files.forEach(file => {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          encoding: "UTF-8",
+          complete: results => {
+            const parsed = results.data.map(row => ({
+              no: (row['No'] || '').trim(),
+              date: (row['日時'] || '').trim(),
+              lat: parseFloat(row['緯度']),
+              lng: parseFloat(row['経度']),
+              memo: (row['音声メモ'] || '').trim()
+            }));
+            allResults = allResults.concat(parsed);
+            processed++;
+
+            if (processed === files.length) {
+              currentData = allResults;
+              renderMap(currentData);
+              renderTable(currentData);
+              if (currentData.length > 0)
+                map.setView([currentData[0].lat, currentData[0].lng], 15);
+            }
+          }
+        });
       });
     });
 
@@ -153,11 +163,9 @@
       const blob = new Blob([header + csvBody], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = 'output.csv';
+      link.download = 'merged_output.csv';
       link.click();
     });
   </script>
 </body>
 </html>
-
-
